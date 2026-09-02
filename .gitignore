@@ -1,0 +1,7 @@
+# lineage (managed automatically by `lineage add`)
+.lineage/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/

@@ -1,0 +1,53 @@
+#!/usr/bin/env sh
+# lineage CLI wrapper for macOS / Linux.
+# Locates a Python 3.11+ interpreter and exec's `python -m lineage "$@"`.
+
+set -e
+
+# Resolve the directory containing this script, following symlinks.
+SCRIPT="$0"
+while [ -L "$SCRIPT" ]; do
+    LINK_TARGET=$(readlink "$SCRIPT")
+    case "$LINK_TARGET" in
+        /*) SCRIPT="$LINK_TARGET" ;;
+        *)  SCRIPT="$(dirname "$SCRIPT")/$LINK_TARGET" ;;
+    esac
+done
+SCRIPT_DIR=$(cd "$(dirname "$SCRIPT")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+
+# Find a Python 3.11+ interpreter.
+find_python() {
+    # Prefer a local venv if present.
+    for venv in "$REPO_ROOT/.venv" "$REPO_ROOT/venv"; do
+        if [ -x "$venv/bin/python" ]; then
+            echo "$venv/bin/python"
+            return 0
+        fi
+    done
+    for cand in python3.13 python3.12 python3.11 python3 python; do
+        if command -v "$cand" >/dev/null 2>&1; then
+            PYPATH=$(command -v "$cand")
+            VERSION=$("$PYPATH" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)
+            case "$VERSION" in
+                3.1[1-9]|3.[2-9].*|3.[1-9][0-9].*)
+                    echo "$PYPATH"
+                    return 0
+                    ;;
+            esac
+        fi
+    done
+    return 1
+}
+
+PYTHON=$(find_python) || {
+    echo "lineage: error: could not find Python 3.11+ on PATH" >&2
+    echo "lineage: hint: install Python 3.11+ or invoke directly: python3.11 -m lineage" >&2
+    exit 127
+}
+
+# Make sure the local `lineage` package is importable, even if the user did
+# not `pip install -e .`. The wrapper is meant to work out of the box.
+export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
+exec "$PYTHON" -m lineage "$@"

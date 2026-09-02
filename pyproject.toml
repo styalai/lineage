@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lineage"
+version = "0.1.0"
+description = "Track the lineage of your experiments as a graph of snapshots and diffs."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Lineage" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+lineage = "lineage.cli:main"
+
+[tool.setuptools]
+packages = ["lineage", "lineage.commands"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
