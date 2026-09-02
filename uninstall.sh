@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # lineage uninstaller
-# Usage:  curl -fsSL https://<host>/uninstall | bash
+# Usage:  curl -fsSL https://raw.githubusercontent.com/styalai/lineage/main/uninstall.sh | bash
 #         bash uninstall.sh
 #
 # Removes:

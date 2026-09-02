@@ -2,8 +2,8 @@
 lineage installer (Windows / PowerShell)
 
 Usage:
-    irm https://<host>/install.ps1 | iex
-    $env:LINEAGE_VERSION = "v0.1.0"; irm https://<host>/install.ps1 | iex
+    irm https://raw.githubusercontent.com/styalai/lineage/main/install.ps1 | iex
+    $env:LINEAGE_VERSION = "v0.1.0"; irm https://raw.githubusercontent.com/styalai/lineage/main/install.ps1 | iex
     .\install.ps1 -LocalTarball .\lineage-0.1.0.tar.gz
 
 Environment overrides:
@@ -22,7 +22,7 @@ $ErrorActionPreference = "Stop"
 # -----------------------------------------------------------------------------
 # Defaults from env
 # -----------------------------------------------------------------------------
-$repo    = if ($env:LINEAGE_REPO)    { $env:LINEAGE_REPO }    else { "lineage/lineage" }
+$repo    = if ($env:LINEAGE_REPO)    { $env:LINEAGE_REPO }    else { "styalai/lineage" }
 $version = if ($env:LINEAGE_VERSION) { $env:LINEAGE_VERSION } else { "latest" }
 $homeDir = if ($env:LINEAGE_HOME)    { $env:LINEAGE_HOME }    else { Join-Path $HOME ".lineage" }
 $binDir  = if ($env:LINEAGE_BIN_DIR) { $env:LINEAGE_BIN_DIR } else { Join-Path $HOME ".local\bin" }

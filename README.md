@@ -18,7 +18,7 @@ Track the lineage of your experiments as a **graph of snapshots and diffs**, wit
 ### One-line install (macOS / Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lineage/lineage/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/styalai/lineage/main/install.sh | bash
 ```
 
 This installs lineage to `~/.lineage/<version>/` and writes a launcher to
@@ -33,7 +33,7 @@ lineage --help
 To pin a specific version:
 
 ```bash
-LINEAGE_VERSION=v0.1.0 curl -fsSL https://raw.githubusercontent.com/lineage/lineage/main/install.sh | bash
+LINEAGE_VERSION=v0.1.0 curl -fsSL https://raw.githubusercontent.com/styalai/lineage/main/install.sh | bash
 ```
 
 To install from a local tarball (e.g. for testing):
@@ -45,7 +45,7 @@ bash install.sh /path/to/lineage-0.1.0.tar.gz
 ### One-line install (Windows, PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/lineage/lineage/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/styalai/lineage/main/install.ps1 | iex
 ```
 
 Installs to `%USERPROFILE%\.lineage\<version>\` and adds
@@ -77,11 +77,11 @@ entry point system-wide.
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/lineage/lineage/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/styalai/lineage/main/uninstall.sh | bash
 # or: bash uninstall.sh
 
 # Windows
-irm https://raw.githubusercontent.com/lineage/lineage/main/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/styalai/lineage/main/uninstall.ps1 | iex
 ```
 
 Removes `~/.lineage/` and the launcher at `~/.local/bin/lineage`.
@@ -92,7 +92,7 @@ The installer respects these environment variables (all optional):
 
 | Variable | Default | Notes |
 |---|---|---|
-| `LINEAGE_REPO` | `lineage/lineage` | GitHub `<owner>/<repo>` to fetch from. |
+| `LINEAGE_REPO` | `styalai/lineage` | GitHub `<owner>/<repo>` to fetch from. |
 | `LINEAGE_VERSION` | `latest` | `vX.Y.Z` to pin a specific release. |
 | `LINEAGE_HOME` | `~/.lineage` | Where the source tree is installed. |
 | `LINEAGE_BIN_DIR` | `~/.local/bin` | Where the `lineage` launcher is written. |

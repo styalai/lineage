@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # lineage installer
-# Usage:  curl -fsSL https://<host>/install | bash
-#         LINEAGE_VERSION=v0.1.0 curl -fsSL https://<host>/install | bash
+# Usage:  curl -fsSL https://raw.githubusercontent.com/styalai/lineage/main/install.sh | bash
+#         LINEAGE_VERSION=v0.1.0 curl -fsSL https://raw.githubusercontent.com/styalai/lineage/main/install.sh | bash
 #         bash install.sh /path/to/local/tarball.tar.gz
 #
 # Defaults (overridable via env):
@@ -16,7 +16,7 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 # Defaults & argument parsing
 # -----------------------------------------------------------------------------
-LINEAGE_REPO="${LINEAGE_REPO:-lineage/lineage}"
+LINEAGE_REPO="${LINEAGE_REPO:-styalai/lineage}"
 LINEAGE_VERSION="${LINEAGE_VERSION:-latest}"
 LINEAGE_HOME="${LINEAGE_HOME:-$HOME/.lineage}"
 LINEAGE_BIN_DIR="${LINEAGE_BIN_DIR:-$HOME/.local/bin}"
@@ -172,7 +172,7 @@ PYTHON="$PYTHON"
 
 if [ ! -d "\$WORKDIR" ] || [ ! -d "\$WORKDIR/lineage" ]; then
     echo "lineage: install at \$WORKDIR is missing or corrupted." >&2
-    echo "lineage: re-run the installer to repair:  curl -fsSL https://<host>/install | bash" >&2
+    echo "lineage: re-run the installer to repair:  curl -fsSL https://raw.githubusercontent.com/styalai/lineage/main/install.sh | bash" >&2
     exit 1
 fi
 
