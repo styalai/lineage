@@ -1092,13 +1092,22 @@
     } catch (e) { showError(String(e)); }
   }
 
-  async function createDetachedNode() {
+  async function createDetachedNode(at) {
     const message = prompt(`New floating baseline experiment (no parent edge) — message:`);
     if (message === null) return;
     try {
       const d = await apiPost("/api/add", { message, snapshot: true, detached: true });
       await refreshGraph(d.id);
+      // Drop the node where the canvas was right-clicked (centered on it).
+      if (at) placeNodeAt(d.id, at);
     } catch (e) { showError(String(e)); }
+  }
+
+  function placeNodeAt(id, pt) {
+    const r = state.layout.nodeRects.get(id);
+    if (!r) return;
+    state.dragOffsets.set(id, { dx: pt.x - r.x - r.w / 2, dy: pt.y - r.y - r.h / 2 });
+    render();
   }
 
   async function logMetric() {
@@ -1271,8 +1280,10 @@
   }
 
   function openCanvasMenu(x, y) {
+    // Remember where the canvas was right-clicked so the new node lands there.
+    const pt = svgPoint(x, y);
     openCtx(x, y, [
-      { label: "New experiment", hint: "floating baseline", action: createDetachedNode },
+      { label: "New experiment", hint: "floating baseline", action: () => createDetachedNode(pt) },
     ]);
   }
 

@@ -18,11 +18,11 @@ TARGETS = {
 
 def template_text() -> str:
     """Load the instruction text from the AGENTS.md shipped with lineage."""
-    candidate = Path(__file__).resolve().parent.parent.parent / "AGENTS.md"
+    candidate = Path(__file__).resolve().parent.parent / "AGENTS.md"
     if not candidate.is_file():
         raise LineageError(
-            "instruction template not found: expected AGENTS.md next to "
-            "the installed lineage package"
+            "instruction template not found: expected lineage/AGENTS.md "
+            "inside the installed lineage package"
         )
     return candidate.read_text(encoding="utf-8")
 
