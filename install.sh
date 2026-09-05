@@ -121,7 +121,7 @@ resolve_version() {
             | sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' | head -n1)" || true
     fi
     if [ -z "$tag" ]; then
-        fail "Could not resolve 'latest' version. Set LINEAGE_VERSION=vX.Y.Z."
+        fail "Could not resolve 'latest' version: no GitHub releases or tags found for $LINEAGE_REPO. Publish a release, set LINEAGE_VERSION=vX.Y.Z, or install from a local checkout (tar it as lineage-0.1.0.tar.gz and run ./install.sh lineage-0.1.0.tar.gz)."
     fi
     echo "$tag"
 }
