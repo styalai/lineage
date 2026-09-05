@@ -20,7 +20,7 @@ def _add_with_files(root, files: dict[str, str], message: str = "", parent: str 
         new_id = ids.ROOT
     else:
         parent_id = parent or (storage.find_latest(root) or ids.ROOT)
-        new_id = ids.next_child_id(parent_id, storage.children_of(parent_id, root))
+        new_id = ids.next_experiment_id(existing)
 
     storage.create_experiment_dir(new_id, root)
 
@@ -74,7 +74,7 @@ def test_diff_then_reconstruct(workdir):
     write(workdir / "a.txt", "one\nTWO\nthree\n")
     write(workdir / "b.txt", "new\n")
     cid = _add_with_files(workdir, {}, message="modify", parent=sid)
-    assert cid == "b0a"
+    assert cid == "b1"
     files = reconstruct.reconstruct_files(cid, workdir)
     assert files["a.txt"] == b"one\nTWO\nthree\n"
     assert files["b.txt"] == b"new\n"

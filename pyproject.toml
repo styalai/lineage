@@ -20,6 +20,10 @@ lineage = "lineage.cli:main"
 
 [tool.setuptools]
 packages = ["lineage", "lineage.commands"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+lineage = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

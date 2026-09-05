@@ -44,7 +44,7 @@ class Meta:
     type: str  # "snapshot" or "diff"
     message: str = ""
     created_at: str = ""
-    metrics: dict[str, float] = field(default_factory=dict)
+    metrics: dict[str, str] = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -59,7 +59,7 @@ class Meta:
             type=data["type"],
             message=data.get("message", ""),
             created_at=data.get("created_at", ""),
-            metrics=dict(data.get("metrics", {})),
+            metrics={str(k): str(v) for k, v in data.get("metrics", {}).items()},
             tags=list(data.get("tags", [])),
         )
 
@@ -190,13 +190,18 @@ def exists(exp_id: str, root: Path | None = None) -> bool:
 
 
 def children_of(parent: str, root: Path | None = None) -> list[str]:
-    """Return direct child ids of ``parent`` (ids exactly one char longer)."""
+    """Return direct child ids of ``parent`` (nodes whose meta parent is ``parent``)."""
     if not ids.is_valid_id(parent):
         raise InvalidIdError(parent)
     out: list[str] = []
     for cid in list_ids(root):
-        if ids.parent_of(cid) == parent and len(cid) == len(parent) + 1:
-            out.append(cid)
+        if cid == parent:
+            continue
+        try:
+            if load(cid, root).parent == parent:
+                out.append(cid)
+        except (ExperimentNotFoundError, LineageError):
+            continue
     return out
 
 
@@ -282,6 +287,68 @@ def remove_experiment(exp_id: str, root: Path | None = None) -> None:
     shutil.rmtree(d)
 
 
+def rename_subtree(
+    old_id: str, new_id: str, new_parent: str, root: Path | None = None
+) -> dict[str, str]:
+    """Rename ``old_id`` to ``new_id`` plus its whole descendant subtree.
+
+    The subtree keeps its shape: each descendant gets ``<new ancestor path> +
+    <next free letter>``. Metas are rewritten (new ids, remapped parents);
+    the moved root's parent becomes ``new_parent``. Snapshot/diff/notes move
+    along with the directories.
+
+    Returns the ``{old_id: new_id}`` mapping. Raises ``LineageError`` if a
+    target directory already exists.
+    """
+    if not exists(old_id, root):
+        raise ExperimentNotFoundError(f"Experiment not found: {old_id}")
+    # BFS from the old root: parents before children.
+    order = [old_id]
+    i = 0
+    while i < len(order):
+        order.extend(sorted(children_of(order[i], root), key=ids.sort_key))
+        i += 1
+    moving = set(order)
+    old_metas = {cid: load(cid, root) for cid in order}
+
+    mapping = {old_id: new_id}
+    assigned: dict[str, set[str]] = {}
+    for old in order[1:]:
+        parent_new = mapping[old_metas[old].parent]
+        blocked = {
+            cid[len(parent_new):]
+            for cid in list_ids(root)
+            if cid not in moving
+            and cid.startswith(parent_new)
+            and len(cid) == len(parent_new) + 1
+        } | assigned.get(parent_new, set())
+        for ch in ids.CHILD_ALPHABET:
+            candidate = parent_new + ch
+            if ch not in blocked and not exp_dir(candidate, root).exists():
+                mapping[old] = candidate
+                assigned.setdefault(parent_new, set()).add(ch)
+                break
+        else:
+            raise LineageError(
+                f"Cannot rename under {parent_new}: all 26 child slots (a-z) taken"
+            )
+
+    for old, new in mapping.items():
+        target = exp_dir(new, root)
+        if old != new and target.exists():
+            raise LineageError(f"Cannot rename {old} to {new}: target exists")
+    for old, new in mapping.items():
+        if old != new:
+            exp_dir(old, root).rename(exp_dir(new, root))
+
+    for old, new in mapping.items():
+        m = old_metas[old]
+        m.id = new
+        m.parent = new_parent if old == old_id else mapping[m.parent]
+        save(m, root)
+    return mapping
+
+
 def read_notes(exp_id: str, root: Path | None = None) -> str:
     p = notes_path(exp_id, root)
     if not p.exists():
@@ -299,14 +366,17 @@ def find_latest(root: Path | None = None) -> str | None:
     if not all_ids:
         return None
     latest_id = None
-    latest_time = ""
+    latest_key: tuple[str, tuple[int, object]] = ("", (0, 0))
     for cid in all_ids:
         try:
             m = load(cid, root)
         except (ExperimentNotFoundError, LineageError):
             continue
-        if m.created_at > latest_time:
-            latest_time = m.created_at
+        # Tie-break same-second timestamps by id so rapid successive
+        # `add`s keep chaining instead of all parenting the first node.
+        key = (m.created_at, ids.sort_key(cid))
+        if key > latest_key:
+            latest_key = key
             latest_id = cid
     return latest_id
 
@@ -325,7 +395,7 @@ def find_latest_leaf(root: Path | None = None) -> str | None:
 
 
 def chain_to_snapshot(exp_id: str, root: Path | None = None) -> list[str]:
-    """Return the chain ``[snapshot, ..., parent_of(exp_id), exp_id]``.
+    """Return the chain ``[snapshot, ..., exp_id]`` by following meta parents.
 
     The first element is the nearest snapshot ancestor of ``exp_id`` (or ``exp_id``
     itself if it is a snapshot).

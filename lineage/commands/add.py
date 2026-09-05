@@ -17,30 +17,59 @@ def run(args, root: Path | None = None) -> int:
     existing = storage.list_ids(base)
     if not existing:
         new_id = ids.ROOT
+        parent_id = ids.ROOT
+        floating = False
     else:
-        parent_id = _resolve_parent(args, base)
-        new_id = ids.next_child_id(parent_id, storage.children_of(parent_id, base))
+        explicit = getattr(args, "from_", None) or getattr(args, "from_id", None)
+        if explicit and getattr(args, "detached", False):
+            raise LineageError("--detached cannot be combined with --from")
+        if explicit:
+            # Attach under the given parent: path-encoded id (b0a, b2a, ...).
+            if not storage.exists(explicit, base):
+                raise LineageError(f"--from: experiment not found: {explicit}")
+            parent_id = explicit
+            new_id = ids.next_child_id(parent_id, existing)
+            floating = False
+        else:
+            # No parent: floating baseline with the next bN id.
+            new_id = ids.next_experiment_id(existing)
+            parent_id = new_id  # self-parent draws no edge
+            floating = True
 
     storage.create_experiment_dir(new_id, base)
 
-    current_files = workspace.gather_files(base)
+    # Floating nodes and forced baselines are full snapshots of the
+    # workspace; no parent reconstruction or diff is needed. (A diff
+    # against yourself would be unreconstructable, so floating implies
+    # snapshot.)
+    force_snapshot = floating or (
+        bool(getattr(args, "snapshot", False)) and new_id != ids.ROOT
+    )
 
+    current_files: dict[str, bytes] = {}
     if new_id == ids.ROOT:
-        parent_id = ids.ROOT
         parent_files: dict[str, bytes] = {}
+    elif floating:
+        parent_files = {}
+    elif force_snapshot:
+        parent_files = {}
     else:
+        current_files = workspace.gather_files(base)
         if parent_id == ids.ROOT and not storage.exists(parent_id, base):
             parent_files = {}
         else:
             parent_files = reconstruct.reconstruct_files(parent_id, base)
 
-    exp_type, patch_text = _decide_and_build(
-        new_id=new_id,
-        parent_id=parent_id,
-        parent_files=parent_files,
-        current_files=current_files,
-        base=base,
-    )
+    if force_snapshot:
+        exp_type, patch_text = ("snapshot", "")
+    else:
+        exp_type, patch_text = _decide_and_build(
+            new_id=new_id,
+            parent_id=parent_id,
+            parent_files=parent_files,
+            current_files=current_files,
+            base=base,
+        )
 
     meta = storage.Meta(
         id=new_id,
@@ -65,23 +94,13 @@ def run(args, root: Path | None = None) -> int:
 
     if new_id == ids.ROOT:
         success(f"created snapshot {bold(new_id)} (root)")
+    elif floating:
+        success(f"created snapshot {bold(new_id)} (floating)")
     elif exp_type == "snapshot":
         success(f"created snapshot {bold(new_id)} (parent {parent_id})")
     else:
         success(f"created diff {bold(new_id)} (parent {parent_id})")
     return 0
-
-
-def _resolve_parent(args, base: Path) -> str:
-    explicit = getattr(args, "from_", None) or getattr(args, "from_id", None)
-    if explicit:
-        if not storage.exists(explicit, base):
-            raise LineageError(f"--from: experiment not found: {explicit}")
-        return explicit
-    latest = storage.find_latest(base)
-    if latest is None:
-        return ids.ROOT
-    return latest
 
 
 def _decide_and_build(

@@ -2,7 +2,7 @@
 
 Track the lineage of your experiments as a **graph of snapshots and diffs**, without interfering with Git.
 
-> **Status:** v0.1 — core commands: `add`, `diff`, `revert`, `remove`, `note`, `log`.
+> **Status:** v0.1 — commands: `add`, `diff`, `revert`, `remove`, `note`, `log`, `web`.
 > Coming soon: `list`, `show`, `graph`, `gc`, `run`.
 
 ---
@@ -105,13 +105,14 @@ The installer respects these environment variables (all optional):
 cd your-project
 
 lineage add -m "baseline"           # creates b0 as a snapshot
-lineage add -m "tweak lr"            # creates b0a as a diff vs b0
-lineage add -m "quantize embed"      # creates b0b as a diff vs b0a
+lineage add -m "idea"                # creates b1 (floating baseline)
+lineage add -m "tweak lr" --from b0  # creates b0a (diff vs b0)
 lineage diff b0 b0a                  # see what changed
 lineage revert b0a                   # restore workspace to b0a
-lineage log b0a --val-loss 2.91      # record a metric
+lineage log b0a loss=2.91            # record a metric
 lineage note b0a                     # edit notes for b0a
-lineage remove b0b                   # delete a leaf
+lineage web                          # open the graph in your browser
+lineage remove b1                    # delete a leaf
 ```
 
 ---
@@ -120,14 +121,26 @@ lineage remove b0b                   # delete a leaf
 
 | Command | Description |
 |---|---|
-| `lineage add [-m MSG] [--from ID]` | Create an experiment from the current workspace. |
+| `lineage add [-m MSG] [--from ID] [--snapshot] [--detached]` | Snapshot the workspace as a floating baseline, or attach under `--from`. |
 | `lineage diff A [B] [--stat] [--files]` | Show unified diff between two experiments (or A and its parent). |
 | `lineage revert ID [--dry-run]` | Restore workspace to a given experiment. |
 | `lineage remove ID [--recursive] [--force]` | Delete an experiment. |
 | `lineage note ID [--append]` | Edit (or append to) an experiment's notes. |
-| `lineage log ID --key value ...` | Record metrics on an experiment. |
+| `lineage log ID key=value ...` | Record metrics on an experiment (any key, string values). |
+| `lineage init [--for opencode\|claude\|codex\|all] [--force]` | Write agent instruction files (`AGENTS.md` / `CLAUDE.md`) into the project. |
+| `lineage web [--port N] [--metric NAME] [--no-browser]` | Launch the local graph UI in your browser. |
 
 Run `lineage <command> --help` for options.
+
+The web UI can also manage the graph directly: right-click the canvas for a
+**New experiment** (floating baseline `bN`, no parent edge), right-click
+a node for **New child** (nested under it with a path id like `b0a`), and
+each node offers **Log** (record `key=value` metrics), **Diff vs parent**,
+**Connect** (right-click → Connect to…, then click the new parent — or
+drag an edge's dot onto another node; the node is renamed to a path
+id under its new parent, and a connected snapshot is collapsed to a diff
+against that parent whenever it round-trips exactly), **Focus**, **Unconnect** (renamed back to a fresh
+floating `bN`), and **Remove** (asks before deleting descendants).
 
 ---
 
@@ -149,6 +162,10 @@ your-project/
         diff.patch        # unified diff against parent
         meta.json
         notes.md
+      b1/
+        snapshot/         # floating baseline (no parent edge)
+        meta.json
+        notes.md
 ```
 
 `.lineage/` is **isolated from your project**: deleting it has zero effect on your files.
@@ -158,8 +175,10 @@ It is also auto-added to your `.gitignore` (created if missing) on first run.
 
 ## How it works
 
-- **IDs** encode the lineage path. `b0` is the root; each level appends one character from a
-  42-character alphabet (`a-z @ # & ? % ! 0-9`).
+- **IDs** reflect position. Floating experiments are numbered `b0` (root),
+  `b1`, `b2`, … in creation order. Attaching a node under a parent renames
+  it (plus its subtree) to a path id — parent plus a letter: `b0a`, `b2a`,
+  `b0aa`, … Detaching renames back to a fresh `bN`.
 - **Snapshots** are real byte copies of your workspace files. We deliberately
   do not use hardlinks: a hardlinked snapshot would silently track later
   in-place modifications to the original file, which would corrupt your

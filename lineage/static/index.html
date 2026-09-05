@@ -1,0 +1,1572 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lineage — Experiment graph</title>
+  <style>
+    :root {
+      --bg:        oklch(0.97 0.005 80);
+      --surface:   oklch(1.0 0 0);
+      --fg:        oklch(0.20 0.004 80);
+      --muted:     oklch(0.54 0.008 80);
+      --border:    oklch(0.88 0.008 80);
+      --border-strong: oklch(0.80 0.008 80);
+      --accent:    oklch(0.55 0.20 258);
+      --accent-hover: oklch(0.48 0.20 258);
+      --fg-soft:   oklch(0.20 0.004 80 / 0.05);
+      --grid-dot:  oklch(0.84 0.005 80);
+
+      --node-snap: oklch(0.60 0.14 155);
+      --node-diff: oklch(0.55 0.20 258);
+      --node-selected: oklch(0.30 0.04 80);
+
+      --gold:      oklch(0.78 0.13 85);
+      --silver:    oklch(0.65 0.005 80);
+      --bronze:    oklch(0.62 0.10 50);
+
+      --font-display: 'Iowan Old Style', 'Charter', Georgia, 'Times New Roman', serif;
+      --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+
+      --fs-body: 13px;
+
+      --sidebar: 460px;
+      --toolbar: 48px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: var(--fs-body);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    svg { display: block; }
+    p, h1, h2, h3, h4 { margin: 0; }
+    button { font: inherit; cursor: pointer; }
+    input, select { font: inherit; }
+
+    /* ─── toolbar ─────────────────────────────────────────────────── */
+    .toolbar {
+      height: var(--toolbar);
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+    .toolbar-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .brand {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .crumbs {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .crumbs b { color: var(--fg); font-weight: 600; }
+    .toolbar-right { display: flex; align-items: center; gap: 10px; }
+    .toolbar-right label { color: var(--muted); font-size: 12px; }
+    .metric-picker { display: flex; align-items: center; gap: 6px; }
+    .metric-picker select {
+      width: 132px;
+      padding: 5px 9px;
+      border: 1px solid var(--border);
+      border-radius: 0;
+      background: var(--surface);
+      color: var(--fg);
+      font: inherit;
+      font-size: 12px;
+    }
+    .metric-picker select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+    .counters { display: flex; gap: 0; margin-right: 8px; border: 1px solid var(--border); }
+    .counter {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+    }
+    .counter:last-child { border-right: none; }
+    .counter .square { width: 8px; height: 8px; }
+    .square.snap { background: var(--fg); }
+    .square.diff { background: transparent; border: 1px solid var(--fg); }
+    .counter b { color: var(--fg); font-weight: 600; }
+
+    /* ─── body: canvas + sidebar ──────────────────────────────────── */
+    .app-body {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: 1fr var(--sidebar);
+      min-height: 0;
+    }
+    @media (max-width: 920px) {
+      .app-body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+      :root { --sidebar: 100%; }
+    }
+
+    .canvas-wrap {
+      min-height: 0;
+      overflow: hidden;
+      background: var(--bg);
+      cursor: grab;
+      position: relative;
+      touch-action: none;
+      /* Infinite dot grid behind the graph: offset/scale synced in JS. */
+      background-image: radial-gradient(circle, var(--grid-dot) 1px, transparent 1.4px);
+      background-size: 22px 22px;
+      background-position: 0 0;
+    }
+    .canvas-wrap.dragging { cursor: grabbing; }
+    .zoom-wrap {
+      transform-origin: 0 0;
+      will-change: transform;
+      padding: 32px;
+      width: max-content;
+      height: max-content;
+      box-sizing: border-box;
+    }
+    .graph-svg { display: block; background: transparent; }
+
+    /* ─── edges (single line + endpoint dots) ──────────────────────── */
+    .edge {
+      fill: none;
+      stroke: var(--border-strong);
+      stroke-width: 2.5;
+      transition: stroke 0.12s, stroke-width 0.12s;
+    }
+    .edge-dot {
+      fill: var(--border-strong);
+      pointer-events: none;
+    }
+    .edge-hit {
+      fill: #fff;
+      fill-opacity: 0;
+      cursor: grab;
+    }
+    .edge-hit:active { cursor: grabbing; }
+    .g-node.drop-target .ring { opacity: 1; }
+
+    /* ─── nodes ─────────────────────────────────────────────────── */
+    .g-node { cursor: grab; touch-action: none; }
+    .g-node:active { cursor: grabbing; }
+    .g-node.dragging { opacity: 0.92; }
+    .g-node.dragging .body { stroke: var(--fg); }
+    .g-node .body {
+      fill: var(--surface);
+      stroke: var(--border-strong);
+      stroke-width: 1;
+      transition: stroke 0.12s, fill 0.12s;
+    }
+    .g-node .name {
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      fill: var(--fg);
+      pointer-events: none;
+    }
+    .g-node .name-id {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      fill: var(--muted);
+    }
+    .g-node .metrics {
+      font-family: var(--font-mono);
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0;
+      fill: var(--fg);
+      pointer-events: none;
+    }
+    .g-node .ring {
+      fill: none;
+      stroke: var(--node-selected);
+      stroke-width: 2;
+      opacity: 0;
+    }
+    .g-node .badge {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 700;
+      fill: var(--surface);
+    }
+
+    .g-node:hover .body { stroke: var(--fg); }
+    .g-node:focus { outline: none; }
+    .g-node:focus-visible .ring { opacity: 1; }
+    .g-node.selected .ring { opacity: 1; }
+    .g-node.selected .body { stroke: var(--node-selected); }
+    .g-node.muted { opacity: 0.35; }
+
+    .node-best .badgebox { fill: var(--node-selected); }
+    .rank-1 .badgebox { fill: var(--gold); }
+    .rank-2 .badgebox { fill: var(--silver); }
+    .rank-3 .badgebox { fill: var(--bronze); }
+
+    /* ─── sidebar ────────────────────────────────────────────────── */
+    .sidebar {
+      border-left: 1px solid var(--border);
+      background: var(--bg);
+      overflow-y: auto;
+      min-height: 0;
+    }
+    .panel {
+      padding: 16px 18px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-head {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 14px;
+      font-weight: 600;
+    }
+    .panel-empty {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+      padding: 6px 0;
+    }
+    .detail-id {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      color: var(--muted);
+    }
+    .detail-name {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin-bottom: 10px;
+      word-break: break-word;
+    }
+    .notes-inline { margin-bottom: 14px; }
+    .notes-inline .notes-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .notes-inline .detail-desc { margin-bottom: 0; max-height: 160px; overflow: auto; }
+    .detail-type {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 8px;
+      border-radius: 0;
+      border: 1px solid var(--border-strong);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      font-weight: 600;
+      color: var(--fg);
+      background: transparent;
+    }
+    .detail-desc { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap; }
+
+    .kv { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .kv-row { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; gap: 12px; }
+    .kv-row .label { color: var(--muted); }
+    .kv-row .value { font-family: var(--font-mono); text-align: right; word-break: break-all; }
+
+    .child-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 4px;
+      border-radius: 0;
+      font-size: 12.5px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+    }
+    .child-row:last-child { border-bottom: none; }
+    .child-row:hover { background: var(--fg-soft); }
+    .child-row .child-id { font-family: var(--font-mono); color: var(--muted); font-size: 11px; width: 48px; }
+    .child-row .child-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .child-row .child-tag { width: 8px; height: 8px; flex-shrink: 0; background: var(--border-strong); }
+
+    /* ─── sidebar tabs ───────────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      flex: 0 0 auto;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .tab {
+      flex: 1;
+      padding: 9px 12px;
+      background: none;
+      border: none;
+      border-radius: 0;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .tab:hover { color: var(--fg); }
+    .tab.active { color: var(--fg); box-shadow: inset 0 -2px 0 var(--fg); }
+
+    /* ─── diff tab ───────────────────────────────────────────────── */
+    .diff-stats { display: flex; gap: 0; margin-bottom: 12px; font-size: 11px; color: var(--muted); border: 1px solid var(--border); }
+    .diff-stats span { padding: 4px 10px; background: var(--surface); border-right: 1px solid var(--border); }
+    .diff-stats span:last-child { border-right: none; }
+    .diff-stats b { color: var(--fg); font-weight: 600; }
+    .file-list { list-style: none; margin: 0 0 12px; padding: 0; }
+    .file-list li {
+      padding: 4px 0;
+      display: flex; gap: 8px; align-items: baseline;
+      font-family: var(--font-mono); font-size: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .file-list li:last-child { border-bottom: none; }
+    .file-list .tag {
+      font-size: 10px; padding: 1px 0; border-radius: 0;
+      color: white; background: var(--muted); flex-shrink: 0;
+      min-width: 16px; text-align: center;
+    }
+    .file-list .tag.added { background: var(--node-snap); }
+    .file-list .tag.removed { background: oklch(0.55 0.17 25); }
+    .file-list .tag.modified { background: var(--node-diff); }
+    pre.diff {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0;
+      padding: 12px;
+      margin: 0;
+      overflow: auto;
+      max-height: 56vh;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    pre.diff .a { color: oklch(0.55 0.17 25); }
+    pre.diff .b { color: oklch(0.55 0.14 155); }
+    pre.diff .h { color: var(--muted); }
+
+    .empty-state {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: grid; place-items: center;
+      color: var(--muted); font-size: 14px;
+      pointer-events: none;
+    }
+    .error-banner {
+      background: oklch(0.55 0.17 25 / 0.10);
+      color: oklch(0.40 0.18 25);
+      padding: 8px 18px; font-size: 12px;
+      border-bottom: 1px solid oklch(0.55 0.17 25 / 0.30);
+    }
+    .connect-banner {
+      background: oklch(0.55 0.06 250 / 0.12);
+      color: oklch(0.35 0.08 250);
+      padding: 8px 18px; font-size: 12px;
+      border-bottom: 1px solid oklch(0.55 0.06 250 / 0.35);
+    }
+    /* ─── context menu ─────────────────────────────────────────────── */
+    .ctx-menu {
+      position: fixed;
+      z-index: 200;
+      min-width: 200px;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      padding: 4px;
+      font-size: 12.5px;
+      box-shadow: 4px 4px 0 oklch(0.20 0.004 80 / 0.12);
+    }
+    .ctx-item {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      border-radius: 0;
+      padding: 7px 10px;
+      color: var(--fg);
+      font: inherit;
+      cursor: pointer;
+    }
+    .ctx-item:hover { background: var(--fg-soft); }
+    .ctx-item.danger:hover { background: oklch(0.55 0.17 25 / 0.12); }
+    .ctx-item .hint {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: var(--font-mono);
+    }
+    .ctx-sep { height: 1px; background: var(--border); margin: 4px 6px; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <span class="brand">Lineage</span>
+      <span class="crumbs">./<b id="crumb-path">—</b></span>
+    </div>
+    <div class="toolbar-right">
+      <span class="counters">
+        <span class="counter"><span class="square snap"></span><b id="c-snap">0</b> snapshots</span>
+        <span class="counter"><span class="square diff"></span><b id="c-diff">0</b> diffs</span>
+        <span class="counter"><b id="c-total">0</b> nodes</span>
+      </span>
+      <div class="metric-picker">
+        <label for="metric-a">first</label>
+        <select id="metric-a"></select>
+      </div>
+      <div class="metric-picker">
+        <label for="metric-b">second</label>
+        <select id="metric-b"></select>
+      </div>
+    </div>
+  </div>
+
+  <div id="error-banner" class="error-banner" style="display:none"></div>
+  <div id="connect-banner" class="connect-banner" style="display:none"></div>
+  <div id="ctx-menu" class="ctx-menu" style="display:none"></div>
+
+  <div class="app-body">
+    <div class="canvas-wrap" id="canvas-wrap">
+      <div class="zoom-wrap" id="zoom-wrap">
+          <svg class="graph-svg" id="graph-svg" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Experiment lineage graph">
+          <g class="edges" id="edges-layer"></g>
+          <g class="nodes" id="nodes-layer"></g>
+          <g class="edge-hits" id="edge-hits-layer"></g>
+        </svg>
+      </div>
+      <div class="empty-state" id="empty" style="display:none">no experiments yet</div>
+    </div>
+
+    <div class="sidebar">
+      <div class="tabs">
+        <button class="tab active" id="tab-btn-details">Details</button>
+        <button class="tab" id="tab-btn-diff">Diff</button>
+      </div>
+      <div id="tab-details">
+      <div class="panel" id="detail-panel">
+        <div class="panel-head">Details</div>
+        <div id="detail-empty">
+          <div class="panel-empty">Select a node in the graph to see its details.</div>
+        </div>
+        <div id="detail-content" style="display:none;">
+          <div class="detail-id" id="d-id"></div>
+          <div class="detail-name" id="d-name"></div>
+          <div class="notes-inline">
+            <div class="notes-label">Notes</div>
+            <pre class="detail-desc" id="notes-content">loading…</pre>
+          </div>
+          <div class="detail-type" id="d-type"></div>
+          <p class="detail-desc" id="d-desc"></p>
+          <div class="kv">
+            <div class="kv-row"><span class="label">parent</span><span class="value" id="d-parent"></span></div>
+            <div class="kv-row"><span class="label">type</span><span class="value" id="d-type-row"></span></div>
+            <div class="kv-row"><span class="label">files</span><span class="value" id="d-files">—</span></div>
+            <div class="kv-row"><span class="label">created</span><span class="value" id="d-date">—</span></div>
+            <div class="kv-row"><span class="label">metrics</span><span class="value" id="d-metrics">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">Children</div>
+        <div id="children-list">
+          <div class="panel-empty">Select a node to see its children.</div>
+        </div>
+      </div>
+      </div>
+
+      <div id="tab-diff" style="display:none">
+        <div class="panel">
+          <div class="panel-head" id="diff-title">Diff</div>
+          <div id="diff-body" style="font-family:var(--font-mono);font-size:12px;">
+            <div class="panel-empty">Select a node to see its diff vs parent.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  "use strict";
+
+  // ----- State --------------------------------------------------------------
+
+  const state = {
+    meta: null,
+    graph: null,
+    byId: new Map(),
+    childrenByParent: new Map(),
+    fileSizes: new Map(),
+    notes: new Map(),
+    selectedId: null,
+    activeTab: "details",
+    rank: new Map(),
+    bestEdges: new Set(),
+    layout: { viewW: 860, viewH: 540, nodeRects: new Map() },
+    dragOffsets: new Map(),
+    metricA: "",
+    metricB: "",
+    pendingConnect: null,
+  };
+
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const $ = (s) => document.querySelector(s);
+
+  // ----- API ----------------------------------------------------------------
+
+  async function api(path, opts) {
+    opts = opts || {};
+    const res = await fetch(path, opts);
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(`API ${path} failed: ${res.status} ${t}`);
+    }
+    return res.json();
+  }
+
+  async function apiPost(path, body) {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `API ${path} failed: ${res.status}`);
+    return data;
+  }
+
+  // ----- Layout -------------------------------------------------------------
+
+  const NODE_W = 180;
+  const NODE_H = 62;
+  const COL_GAP = 22;
+  const ROW_GAP = 80;          // a bit more breathing room
+  const PAD_X = 30;
+  const PAD_Y = 40;
+  const CHART_W = 860;
+  const CHART_H = 540;
+
+  function layout(graph) {
+    const byDepth = new Map();
+    let maxX = 0;
+    for (const n of graph.nodes) {
+      const d = n.position.depth;
+      if (!byDepth.has(d)) byDepth.set(d, []);
+      byDepth.get(d).push(n);
+      if (n.position.x > maxX) maxX = n.position.x;
+    }
+    const nodeRects = new Map();
+    for (const [depth, nodes] of byDepth) {
+      for (const n of nodes) {
+        const x = PAD_X + n.position.x * (NODE_W + COL_GAP);
+        const y = PAD_Y + depth * (NODE_H + ROW_GAP);
+        nodeRects.set(n.id, { x, y, w: NODE_W, h: NODE_H });
+      }
+    }
+    let viewW = CHART_W;
+    if (nodeRects.size > 0) {
+      let right = 0;
+      for (const r of nodeRects.values()) {
+        if (r.x + r.w > right) right = r.x + r.w;
+      }
+      viewW = Math.min(2400, Math.max(CHART_W, right + PAD_X));
+    }
+    let viewH = CHART_H;
+    if (nodeRects.size > 0) {
+      let bottom = 0;
+      for (const r of nodeRects.values()) {
+        if (r.y + r.h > bottom) bottom = r.y + r.h;
+      }
+      viewH = Math.min(2400, Math.max(CHART_H, bottom + PAD_Y));
+    }
+    let maxDepth = 0;
+    for (const d of byDepth.keys()) if (d > maxDepth) maxDepth = d;
+    return { viewW, viewH, nodeRects, maxDepth };
+  }
+
+  // ----- Rendering ----------------------------------------------------------
+
+  function render() {
+    if (!state.graph) return;
+    const { viewW, viewH, nodeRects } = state.layout;
+    const svg = $("#graph-svg");
+    svg.setAttribute("viewBox", `0 0 ${viewW} ${viewH}`);
+    svg.setAttribute("width", viewW);
+    svg.setAttribute("height", viewH);
+    renderEdges();
+    renderNodes();
+  }
+
+  // ----- Edges (single line + endpoint dots) --------------------------------
+
+  // edgeEls: "from→to" -> { path, dotA, dotB, hitB } — one curved line with
+  // a dot at each end. The child-end dot has a fat invisible hit circle so
+  // it can be grabbed and dragged onto another node to connect (reparent).
+  const edgeEls = new Map();
+  const EDGE_DOT_R = 3;
+  const EDGE_HIT_R = 10;
+
+  function renderEdges() {
+    const layer = $("#edges-layer");
+    layer.innerHTML = "";
+    // Hit circles live in a topmost layer so node bodies can't cover them.
+    $("#edge-hits-layer").innerHTML = "";
+    edgeEls.clear();
+    for (const e of state.graph.edges) {
+      if (!state.layout.nodeRects.get(e.from) || !state.layout.nodeRects.get(e.to)) continue;
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("class", "edge");
+      path.setAttribute("data-parent", e.from);
+      path.setAttribute("data-child", e.to);
+      path.addEventListener("click", (ev) => { ev.stopPropagation(); selectNode(e.to); switchTab("diff"); });
+      layer.appendChild(path);
+      const dotA = document.createElementNS(SVG_NS, "circle");
+      dotA.setAttribute("class", "edge-dot");
+      dotA.setAttribute("r", EDGE_DOT_R);
+      layer.appendChild(dotA);
+      const dotB = document.createElementNS(SVG_NS, "circle");
+      dotB.setAttribute("class", "edge-dot");
+      dotB.setAttribute("r", EDGE_DOT_R);
+      layer.appendChild(dotB);
+      const hitB = document.createElementNS(SVG_NS, "circle");
+      hitB.setAttribute("class", "edge-hit");
+      hitB.setAttribute("r", EDGE_HIT_R);
+      hitB.setAttribute("data-child", e.to);
+      $("#edge-hits-layer").appendChild(hitB);
+      const els = { path, dotA, dotB, hitB, from: e.from, to: e.to };
+      edgeEls.set(e.from + "→" + e.to, els);
+      attachDotDrag(hitB, els);
+      placeEdge(e.from, e.to);
+    }
+  }
+
+  // Position a single edge using current layout + drag offsets.
+  function placeEdge(from, to) {
+    const pr = state.layout.nodeRects.get(from);
+    const cr = state.layout.nodeRects.get(to);
+    if (!pr || !cr) return;
+    const po = state.dragOffsets.get(from) || { dx: 0, dy: 0 };
+    const co = state.dragOffsets.get(to)   || { dx: 0, dy: 0 };
+    const pCx = pr.x + po.dx + pr.w / 2;
+    const pY = pr.y + po.dy + pr.h;
+    const cCx = cr.x + co.dx + cr.w / 2;
+    const cY = cr.y + co.dy;
+    const mid = (pY + cY) / 2;
+    const els = edgeEls.get(from + "→" + to);
+    if (!els) return;
+    setEdgeGeometry(els, pCx, pY, cCx, cY);
+  }
+
+  function setEdgeGeometry(els, pCx, pY, cCx, cY) {
+    const mid = (pY + cY) / 2;
+    els.path.setAttribute("d",
+      `M ${pCx} ${pY} C ${pCx} ${mid}, ${cCx} ${mid}, ${cCx} ${cY}`);
+    els.dotA.setAttribute("cx", pCx);
+    els.dotA.setAttribute("cy", pY);
+    els.dotB.setAttribute("cx", cCx);
+    els.dotB.setAttribute("cy", cY);
+    els.hitB.setAttribute("cx", cCx);
+    els.hitB.setAttribute("cy", cY);
+  }
+
+  function svgPoint(clientX, clientY) {
+    const rect = $("#graph-svg").getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) * state.layout.viewW / rect.width,
+      y: (clientY - rect.top) * state.layout.viewH / rect.height,
+    };
+  }
+
+  function nodeAt(pt, excludeId) {
+    for (const [id, r] of state.layout.nodeRects) {
+      if (id === excludeId) continue;
+      const o = state.dragOffsets.get(id) || { dx: 0, dy: 0 };
+      const x = r.x + o.dx, y = r.y + o.dy;
+      if (pt.x >= x - 4 && pt.x <= x + r.w + 4 && pt.y >= y - 4 && pt.y <= y + r.h + 4) {
+        return id;
+      }
+    }
+    return null;
+  }
+
+  function clearDropTargets() {
+    document.querySelectorAll("#nodes-layer .g-node.drop-target").forEach(g => {
+      g.classList.remove("drop-target");
+    });
+  }
+
+  // Drag the child-end dot of an edge onto another node to reparent it.
+  // A press without movement falls through to selecting the child node.
+  function attachDotDrag(hit, els) {
+    let drag = null;
+    hit.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      e.stopPropagation();
+      e.preventDefault();
+      closeCtx();
+      try { hit.setPointerCapture(e.pointerId); } catch (_) {}
+      drag = { active: true, pid: e.pointerId, hover: null, moved: false, sx: e.clientX, sy: e.clientY };
+    });
+    hit.addEventListener("pointermove", (e) => {
+      if (!drag || !drag.active) return;
+      if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > 3) drag.moved = true;
+      const pt = svgPoint(e.clientX, e.clientY);
+      const ax = Number(els.dotA.getAttribute("cx"));
+      const ay = Number(els.dotA.getAttribute("cy"));
+      setEdgeGeometry(els, ax, ay, pt.x, pt.y);
+      const target = nodeAt(pt, els.to);
+      if (target !== drag.hover) {
+        clearDropTargets();
+        drag.hover = target;
+        if (target) {
+          const g = document.querySelector(`#nodes-layer .g-node[data-id="${CSS.escape(target)}"]`);
+          if (g) g.classList.add("drop-target");
+        }
+      }
+    });
+    const end = (e) => {
+      if (!drag || !drag.active) return;
+      drag.active = false;
+      try { hit.releasePointerCapture(drag.pid); } catch (_) {}
+      const target = drag.hover;
+      const moved = drag.moved;
+      drag.hover = null;
+      clearDropTargets();
+      if (target) {
+        const n = state.byId.get(els.to);
+        if (n && target === n.parent) {
+          placeEdge(els.from, els.to); // dropped on current parent: snap back
+        } else {
+          selectNode(target);
+          connectNode(els.to, target);
+        }
+      } else if (!moved) {
+        selectNode(els.to); // plain click on the dot selects the child node
+      } else {
+        placeEdge(els.from, els.to); // dropped on empty space: snap back
+      }
+      drag = null;
+    };
+    hit.addEventListener("pointerup", end);
+    hit.addEventListener("pointercancel", end);
+  }
+
+  function updateAllEdges() {
+    for (const key of edgeEls.keys()) {
+      const [from, to] = key.split("→");
+      placeEdge(from, to);
+    }
+  }
+
+  // ----- Nodes --------------------------------------------------------------
+
+  function renderNodes() {
+    const layer = $("#nodes-layer");
+    layer.innerHTML = "";
+    for (const n of state.graph.nodes) {
+      const r = state.layout.nodeRects.get(n.id);
+      if (!r) continue;
+      layer.appendChild(nodeElement(n, r));
+    }
+  }
+
+  function nodeElement(n, r) {
+    const g = document.createElementNS(SVG_NS, "g");
+    let cls = "g-node node-" + (n.type === "snapshot" ? "snap" : "diff");
+    if (n.id === state.selectedId) cls += " selected";
+    const rank = state.rank.get(n.id);
+    if (rank) cls += " node-best rank-" + (rank.rank + 1);
+    g.setAttribute("class", cls);
+    g.setAttribute("data-id", n.id);
+    g.setAttribute("tabindex", "0");
+    g.setAttribute("role", "button");
+    g.setAttribute("aria-label", n.id + " — " + (n.message || n.type));
+    const off = state.dragOffsets.get(n.id) || { dx: 0, dy: 0 };
+    g.setAttribute("transform", `translate(${r.x + off.dx}, ${r.y + off.dy})`);
+
+    // ring (selection outline)
+    const ring = document.createElementNS(SVG_NS, "rect");
+    ring.setAttribute("class", "ring");
+    ring.setAttribute("x", "-3");
+    ring.setAttribute("y", "-3");
+    ring.setAttribute("width", r.w + 6);
+    ring.setAttribute("height", r.h + 6);
+    g.appendChild(ring);
+
+    // body (sharp rectangle)
+    const body = document.createElementNS(SVG_NS, "rect");
+    body.setAttribute("class", "body");
+    body.setAttribute("x", "0");
+    body.setAttribute("y", "0");
+    body.setAttribute("width", r.w);
+    body.setAttribute("height", r.h);
+    g.appendChild(body);
+
+    // name + id
+    g.appendChild(makeNameText(n, r.w));
+    // metric lines (first + optional second)
+    g.appendChild(makeMetricsText(n, r.w));
+
+    // rank badge (top-right square)
+    if (rank) {
+      const badgeBox = document.createElementNS(SVG_NS, "rect");
+      badgeBox.setAttribute("class", "badgebox");
+      badgeBox.setAttribute("x", r.w - 18);
+      badgeBox.setAttribute("y", "0");
+      badgeBox.setAttribute("width", "18");
+      badgeBox.setAttribute("height", "14");
+      g.appendChild(badgeBox);
+      const badge = document.createElementNS(SVG_NS, "text");
+      badge.setAttribute("class", "badge");
+      badge.setAttribute("x", r.w - 9);
+      badge.setAttribute("y", "10.5");
+      badge.setAttribute("text-anchor", "middle");
+      badge.textContent = String(rank.rank + 1);
+      g.appendChild(badge);
+    }
+
+    attachNodeInteractions(g, n, r);
+    return g;
+  }
+
+  function makeNameText(n, width) {
+    const t = document.createElementNS(SVG_NS, "text");
+    t.setAttribute("class", "name");
+    t.setAttribute("x", "14");
+    t.setAttribute("y", "24");
+    const name = (n.message || "").trim() || "(no message)";
+    // Allow ~ (width - 14 - id_width) chars
+    const maxName = Math.max(8, Math.floor((width - 74) / 8.5));
+    const trimmed = name.length > maxName ? name.slice(0, maxName - 1) + "…" : name;
+    t.appendChild(document.createTextNode(trimmed));
+    const idTspan = document.createElementNS(SVG_NS, "tspan");
+    idTspan.setAttribute("class", "name-id");
+    idTspan.setAttribute("dx", "8");
+    idTspan.textContent = n.id;
+    t.appendChild(idTspan);
+    return t;
+  }
+
+  function makeMetricsText(n, width) {
+    const t = document.createElementNS(SVG_NS, "text");
+    t.setAttribute("class", "metrics");
+    t.setAttribute("x", "14");
+    t.setAttribute("y", "48");
+    const aHas = state.metricA && n.metrics && n.metrics[state.metricA] != null;
+    const bHas = state.metricB && n.metrics && n.metrics[state.metricB] != null;
+    let value;
+    if (aHas && bHas) {
+      value = `${n.metrics[state.metricA]} | ${n.metrics[state.metricB]}`;
+    } else if (aHas) {
+      value = `${n.metrics[state.metricA]}`;
+    } else if (bHas) {
+      value = `${n.metrics[state.metricB]}`;
+    } else {
+      const fs = state.fileSizes.get(n.id);
+      if (fs) value = `${fs.files} files`;
+      else value = n.type;
+    }
+    const maxVal = Math.max(8, Math.floor((width - 14) / 9));
+    t.textContent = value.length > maxVal ? value.slice(0, maxVal - 1) + "…" : value;
+    return t;
+  }
+
+  // ----- Drag ---------------------------------------------------------------
+
+  function attachNodeInteractions(g, n, r) {
+    let drag = null;
+    g.addEventListener("pointerdown", (e) => {
+      const cur = state.dragOffsets.get(n.id) || { dx: 0, dy: 0 };
+      drag = {
+        active: true, moved: false, pid: e.pointerId,
+        sx: e.clientX, sy: e.clientY,
+        baseDx: cur.dx, baseDy: cur.dy,
+        dx: cur.dx, dy: cur.dy,
+      };
+      g.setPointerCapture(e.pointerId);
+      g.classList.add("dragging");
+      e.preventDefault();
+    });
+    g.addEventListener("pointermove", (e) => {
+      if (!drag || !drag.active) return;
+      const rect = $("#graph-svg").getBoundingClientRect();
+      const scaleX = state.layout.viewW / rect.width;
+      const scaleY = state.layout.viewH / rect.height;
+      const ddx = (e.clientX - drag.sx) * scaleX;
+      const ddy = (e.clientY - drag.sy) * scaleY;
+      if (Math.abs(ddx) > 2 || Math.abs(ddy) > 2) drag.moved = true;
+      drag.dx = drag.baseDx + ddx;
+      drag.dy = drag.baseDy + ddy;
+      g.setAttribute("transform", `translate(${r.x + drag.dx}, ${r.y + drag.dy})`);
+      state.dragOffsets.set(n.id, { dx: drag.dx, dy: drag.dy });
+      updateAllEdges();
+    });
+    const end = () => {
+      if (!drag || !drag.active) return;
+      // Connect pick-mode: a clean click on another node completes the
+      // connection; clicking the armed node itself cancels.
+      if (!drag.moved && state.pendingConnect) {
+        const child = state.pendingConnect;
+        clearConnect();
+        if (n.id !== child) connectNode(child, n.id);
+        else selectNode(n.id);
+        g.classList.remove("dragging");
+        drag.active = false;
+        return;
+      }
+      // Click (no move) only selects — never reset custom placement.
+      selectNode(n.id);
+      g.classList.remove("dragging");
+      drag.active = false;
+    };
+    g.addEventListener("pointerup", end);
+    g.addEventListener("pointercancel", end);
+    g.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        selectNode(n.id);
+      }
+    });
+  }
+
+  // ----- Selection / sidebar -----------------------------------------------
+
+  async function selectNode(id) {
+    const n = state.byId.get(id);
+    if (!n) {
+      state.selectedId = null;
+      render();
+      $("#crumb-path").textContent = "—";
+      $("#detail-empty").style.display = "block";
+      $("#detail-content").style.display = "none";
+      renderChildren();
+      if (state.activeTab === "diff") loadDiffTab();
+      return;
+    }
+    state.selectedId = id;
+    render();
+    $("#crumb-path").textContent = id;
+
+    $("#detail-empty").style.display = "none";
+    $("#detail-content").style.display = "block";
+    $("#d-id").textContent = id;
+    $("#d-name").textContent = n.message || "(no message)";
+    const typeEl = $("#d-type");
+    typeEl.textContent = n.type === "snapshot" ? "Snapshot" : "Diff";
+    typeEl.className = "detail-type";
+    $("#d-type-row").textContent = n.type;
+    $("#d-parent").textContent = n.parent && n.parent !== id ? n.parent : "—";
+    $("#d-date").textContent = n.created_at || "—";
+    $("#d-files").textContent = "…";
+    $("#d-metrics").textContent = formatMetrics(n.metrics);
+    $("#notes-content").textContent = "loading…";
+
+    Promise.all([loadFileSummary(id), loadNotes(id)]).then(() => {
+      if (state.selectedId !== id) return;
+      const fs = state.fileSizes.get(id);
+      $("#d-files").textContent = fs ? `${fs.files} files` : "—";
+      if (!state.metricA && !state.metricB) render();
+    }).catch((e) => showError(String(e)));
+
+    renderChildren();
+    if (state.activeTab === "diff") loadDiffTab();
+  }
+
+  async function loadFileSummary(id) {
+    if (state.fileSizes.has(id)) return;
+    try {
+      const d = await api(`/api/files?id=${encodeURIComponent(id)}`);
+      state.fileSizes.set(id, { files: d.file_count });
+    } catch (e) {
+      state.fileSizes.set(id, { files: 0 });
+    }
+  }
+
+  async function loadNotes(id) {
+    if (state.notes.has(id)) {
+      $("#notes-content").textContent = state.notes.get(id) || "(empty)";
+      return;
+    }
+    try {
+      const d = await api(`/api/notes?id=${encodeURIComponent(id)}`);
+      state.notes.set(id, d.notes || "");
+      if (state.selectedId === id) $("#notes-content").textContent = d.notes || "(empty)";
+    } catch (e) {
+      if (state.selectedId === id) $("#notes-content").textContent = "failed to load";
+    }
+  }
+
+  function renderChildren() {
+    const list = $("#children-list");
+    if (!state.selectedId) {
+      list.innerHTML = '<div class="panel-empty">Select a node to see its children.</div>';
+      return;
+    }
+    const kids = state.childrenByParent.get(state.selectedId) || [];
+    if (kids.length === 0) {
+      list.innerHTML = '<div class="panel-empty">No children — leaf node.</div>';
+      return;
+    }
+    list.innerHTML = kids.map(id => {
+      const k = state.byId.get(id);
+      const name = (k.message || "(no message)").slice(0, 40);
+      return `<div class="child-row" data-child="${escapeAttr(id)}">` +
+        `<span class="child-tag"></span>` +
+        `<span class="child-id">${escapeHtml(id)}</span>` +
+        `<span class="child-name">${escapeHtml(name)}</span>` +
+      `</div>`;
+    }).join("");
+    list.querySelectorAll("[data-child]").forEach(row => {
+      row.addEventListener("click", () => selectNode(row.getAttribute("data-child")));
+    });
+  }
+
+  // ----- Mutations (create / log / remove / connect) ------------------------
+
+  function applyGraph(graph, keepId) {
+    state.graph = graph;
+    state.byId = new Map(graph.nodes.map(n => [n.id, n]));
+    state.childrenByParent = new Map();
+    for (const n of graph.nodes) {
+      if (n.parent === n.id) continue; // detached node / root: not its own child
+      if (!state.childrenByParent.has(n.parent)) state.childrenByParent.set(n.parent, []);
+      state.childrenByParent.get(n.parent).push(n.id);
+    }
+    for (const arr of state.childrenByParent.values()) arr.sort();
+    state.layout = layout(graph);
+    populateMetricOptions();
+    computeRanks();
+    const snaps = graph.nodes.filter(n => n.type === "snapshot").length;
+    const diffs = graph.nodes.length - snaps;
+    $("#c-snap").textContent = String(snaps);
+    $("#c-diff").textContent = String(diffs);
+    $("#c-total").textContent = String(graph.nodes.length);
+    $("#empty").style.display = graph.nodes.length === 0 ? "grid" : "none";
+    render();
+    const target = (keepId && state.byId.has(keepId)) ? keepId : (graph.root || "b0");
+    selectNode(target);
+  }
+
+  async function refreshGraph(keepId) {
+    applyGraph(await api("/api/graph"), keepId);
+  }
+
+  async function createNode() {
+    const parent = state.selectedId || undefined;
+    const hint = parent ? ` under ${parent}` : "";
+    const message = prompt(`New baseline experiment${hint} — message:`);
+    if (message === null) return;
+    try {
+      const d = await apiPost("/api/add", { message, parent, snapshot: true });
+      await refreshGraph(d.id);
+    } catch (e) { showError(String(e)); }
+  }
+
+  async function createDetachedNode() {
+    const message = prompt(`New floating baseline experiment (no parent edge) — message:`);
+    if (message === null) return;
+    try {
+      const d = await apiPost("/api/add", { message, snapshot: true, detached: true });
+      await refreshGraph(d.id);
+    } catch (e) { showError(String(e)); }
+  }
+
+  async function logMetric() {
+    if (!state.selectedId) return;
+    const id = state.selectedId;
+    const pre = state.metricA ? state.metricA + "=" : "";
+    const raw = prompt(`Log metric on ${id} (key=value):`, pre);
+    if (raw === null) return;
+    const eq = raw.indexOf("=");
+    if (eq <= 0) { alert("Expected key=value."); return; }
+    const key = raw.slice(0, eq).trim();
+    const value = raw.slice(eq + 1).trim();
+    if (!key) { alert("Expected key=value."); return; }
+    try {
+      await apiPost("/api/log", { id, metrics: { [key]: value } });
+      await refreshGraph(id);
+    } catch (e) { showError(String(e)); }
+  }
+
+  async function removeNode() {
+    if (!state.selectedId) return;
+    const id = state.selectedId;
+    const n = state.byId.get(id);
+    const kids = state.childrenByParent.get(id) || [];
+    const parent = n && n.parent && n.parent !== id ? n.parent : null;
+    let recursive = false;
+    if (kids.length) {
+      if (!confirm(`Remove ${id} and its ${kids.length} descendant(s)?`)) return;
+      recursive = true;
+    } else {
+      if (!confirm(`Remove ${id}?`)) return;
+    }
+    try {
+      await apiPost("/api/remove", { id, recursive });
+      await refreshGraph(parent);
+    } catch (e) { showError(String(e)); }
+  }
+
+  async function unconnectNode() {
+    if (!state.selectedId) return;
+    const id = state.selectedId;
+    const n = state.byId.get(id);
+    if (!n || !n.parent || n.parent === n.id) {
+      alert(`${id} has no parent — nothing to unconnect.`);
+      return;
+    }
+    const extra = n.type === "diff"
+      ? " It will become a standalone snapshot (patch materialized)."
+      : "";
+    if (!confirm(`Detach ${id} from ${n.parent}? It will be renamed to a fresh floating id.${extra}`)) return;
+    try {
+      const d = await apiPost("/api/unconnect", { id });
+      // Unconnect renames to a fresh floating bN id — follow it.
+      await refreshGraph(d.id);
+    } catch (e) { showError(String(e)); }
+  }
+
+  async function connectNode(from, to) {
+    try {
+      const d = await apiPost("/api/connect", { id: from, parent: to });
+      // Connect renames to a path id under the new parent — follow it.
+      await refreshGraph(d.id);
+      const notes = [`Renamed ${from} → ${d.id}.`];
+      if (d.converted) notes.push("Snapshot collapsed to a diff against the new parent.");
+      if (d.warning) notes.push(d.warning);
+      alert(notes.join("\n\n"));
+    } catch (e) { showError(String(e)); }
+  }
+
+  // Pick-mode connect: arm on one node, then click the new parent.
+  // (Dot-drag only works from an existing edge, so floating nodes need this.)
+  function armConnect(id) {
+    state.pendingConnect = id;
+    selectNode(id);
+    const bar = $("#connect-banner");
+    bar.textContent = `Connect ${id} under… — click the new parent (Esc cancels).`;
+    bar.style.display = "block";
+  }
+
+  function clearConnect() {
+    state.pendingConnect = null;
+    $("#connect-banner").style.display = "none";
+  }
+
+  function revertStub() {
+    if (!state.selectedId) return;
+    alert(
+      `Revert workspace to ${state.selectedId}?\n\n` +
+      `This will overwrite the current workspace files with the reconstructed contents.\n\n` +
+      `(Revert from the web UI is not yet wired — run from the terminal:)\n\n` +
+      `  lineage revert ${state.selectedId}`
+    );
+  }
+
+  function focusNode() {
+    if (!state.selectedId) return;
+    const r = state.layout.nodeRects.get(state.selectedId);
+    if (!r) return;
+    // Center the node in the visible viewport at the current zoom.
+    const wrap = $("#canvas-wrap");
+    const cx = (r.x + r.w / 2) * state2.zoom;
+    const cy = (r.y + r.h / 2) * state2.zoom;
+    state2.panX = wrap.clientWidth / 2 - cx;
+    state2.panY = wrap.clientHeight / 2 - cy;
+    applyTransform();
+  }
+
+  // ----- Context menu -------------------------------------------------------
+
+  function closeCtx() {
+    $("#ctx-menu").style.display = "none";
+  }
+
+  function openCtx(x, y, items) {
+    const menu = $("#ctx-menu");
+    menu.innerHTML = "";
+    for (const it of items) {
+      if (it === "sep") {
+        const s = document.createElement("div");
+        s.setAttribute("class", "ctx-sep");
+        menu.appendChild(s);
+        continue;
+      }
+      const b = document.createElement("button");
+      b.setAttribute("class", "ctx-item" + (it.danger ? " danger" : ""));
+      const label = document.createElement("span");
+      label.textContent = it.label;
+      b.appendChild(label);
+      if (it.hint) {
+        const h = document.createElement("span");
+        h.setAttribute("class", "hint");
+        h.textContent = it.hint;
+        b.appendChild(h);
+      }
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeCtx();
+        it.action();
+      });
+      menu.appendChild(b);
+    }
+    menu.style.display = "block";
+    // Clamp inside the viewport.
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 4)) + "px";
+    menu.style.top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 4)) + "px";
+  }
+
+  function openNodeMenu(x, y, id) {
+    const n = state.byId.get(id);
+    if (!n) return;
+    const hasParent = n.parent && n.parent !== id;
+    const items = [
+      { label: "New child", hint: "snapshot workspace", action: createNode },
+      { label: "Log metric", hint: "key=value", action: logMetric },
+      "sep",
+      ...(hasParent
+        ? [{ label: "Diff vs parent", action: () => switchTab("diff") }]
+        : []),
+      { label: "Revert workspace to here", action: revertStub },
+      { label: "Focus", action: focusNode },
+      ...(id !== (state.graph && state.graph.root)
+        ? [{ label: "Connect to…", hint: "then click parent", action: () => armConnect(id) }]
+        : []),
+      "sep",
+      ...(hasParent ? [{ label: "Unconnect from parent", action: unconnectNode }] : []),
+      { label: "Remove", danger: true, action: removeNode },
+    ];
+    openCtx(x, y, items);
+  }
+
+  function openCanvasMenu(x, y) {
+    openCtx(x, y, [
+      { label: "New experiment", hint: "floating baseline", action: createDetachedNode },
+    ]);
+  }
+
+  function bindCtxMenu() {
+    const canvas = $("#canvas-wrap");
+    canvas.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      closeCtx();
+      const g = e.target.closest(".g-node");
+      const hit = !g && e.target.closest(".edge-hit");
+      const id = (g && g.dataset.id) || (hit && hit.dataset.child);
+      if (id) {
+        selectNode(id);
+        openNodeMenu(e.clientX, e.clientY, id);
+      } else {
+        openCanvasMenu(e.clientX, e.clientY);
+      }
+    });
+    // Dismiss on anything else: click, wheel, resize, Escape.
+    document.addEventListener("pointerdown", (e) => {
+      if (!e.target.closest("#ctx-menu")) closeCtx();
+    }, true);
+    canvas.addEventListener("wheel", closeCtx, { passive: true });
+    window.addEventListener("resize", closeCtx);
+    window.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeCtx(); clearConnect(); } });
+  }
+
+  // ----- Sidebar tabs + diff tab ------------------------------------------
+
+  function switchTab(name) {
+    state.activeTab = name;
+    const isDetails = name === "details";
+    $("#tab-details").style.display = isDetails ? "block" : "none";
+    $("#tab-diff").style.display = isDetails ? "none" : "block";
+    $("#tab-btn-details").classList.toggle("active", isDetails);
+    $("#tab-btn-diff").classList.toggle("active", !isDetails);
+    if (!isDetails) loadDiffTab();
+  }
+
+  async function loadDiffTab() {
+    const body = $("#diff-body");
+    const id = state.selectedId;
+    const n = id && state.byId.get(id);
+    if (!n) {
+      $("#diff-title").textContent = "Diff";
+      body.innerHTML = '<div class="panel-empty">Select a node to see its diff vs parent.</div>';
+      return;
+    }
+    if (!n.parent || n.parent === n.id) {
+      $("#diff-title").textContent = `diff: ${n.id} (root)`;
+      body.innerHTML = '<div class="panel-empty">Root node has no parent — nothing to diff.</div>';
+      return;
+    }
+    const from = n.parent, to = n.id;
+    $("#diff-title").textContent = `diff: ${from} → ${to}`;
+    body.innerHTML = "loading…";
+    try {
+      const d = await api(`/api/diff?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+      if (state.selectedId !== to) return; // selection moved on while loading
+      const items = [
+        ...d.files.added.map(p => `<li><span class="tag added">+</span><span>${escapeHtml(p)}</span></li>`),
+        ...d.files.removed.map(p => `<li><span class="tag removed">−</span><span>${escapeHtml(p)}</span></li>`),
+        ...d.files.modified.map(p => `<li><span class="tag modified">~</span><span>${escapeHtml(p)}</span></li>`),
+      ].join("");
+      const patch = d.patch
+        ? `<pre class="diff">${formatDiff(d.patch)}</pre>`
+        : `<pre class="diff">(no textual changes)</pre>`;
+      body.innerHTML = `
+        <div class="diff-stats">
+          <span><b>+${d.stats.added}</b> added</span>
+          <span><b>-${d.stats.removed}</b> removed</span>
+          <span><b>~${d.stats.modified}</b> modified</span>
+        </div>
+        ${items ? `<ul class="file-list">${items}</ul>` : "<p style='color:var(--muted)'>no file changes</p>"}
+        ${patch}
+      `;
+    } catch (e) {
+      body.innerHTML = `<pre>${escapeHtml(String(e))}</pre>`;
+    }
+  }
+
+  // ----- Ranking ------------------------------------------------------------
+
+  function computeRanks() {
+    state.rank.clear();
+    state.bestEdges.clear();
+    if (!state.metricA || !state.graph) return;
+    const scored = [];
+    for (const n of state.graph.nodes) {
+      const v = n.metrics && n.metrics[state.metricA];
+      if (v == null || v === "") continue;
+      const num = Number(v);
+      if (Number.isFinite(num)) scored.push({ id: n.id, score: num });
+    }
+    if (scored.length === 0) return;
+    scored.sort((a, b) => a.score - b.score || a.id.localeCompare(b.id));
+    scored.forEach((s, i) => {
+      if (i < 3) state.rank.set(s.id, { rank: i, score: s.score });
+    });
+  }
+
+  // ----- Toolbar / metric ---------------------------------------------------
+
+  function collectMetricKeys() {
+    const set = new Set();
+    for (const n of state.graph.nodes) {
+      for (const k of Object.keys(n.metrics || {})) set.add(k);
+    }
+    return [...set].sort();
+  }
+
+  function fillMetricSelect(sel, current, includeNone) {
+    sel.innerHTML = "";
+    if (includeNone) {
+      const o = document.createElement("option");
+      o.value = "";
+      o.textContent = "(none)";
+      sel.appendChild(o);
+    }
+    for (const k of collectMetricKeys()) {
+      const o = document.createElement("option");
+      o.value = k;
+      o.textContent = k;
+      sel.appendChild(o);
+    }
+    // `current` might not be in the list (user typed it) — add it as a
+    // synthetic option so the select reflects the saved value.
+    if (current && ![...sel.options].some((o) => o.value === current)) {
+      const o = document.createElement("option");
+      o.value = current;
+      o.textContent = current;
+      sel.appendChild(o);
+    }
+    sel.value = current || "";
+  }
+
+  function populateMetricOptions() {
+    fillMetricSelect($("#metric-a"), state.metricA, true);
+    fillMetricSelect($("#metric-b"), state.metricB, true);
+  }
+
+  function bindToolbar() {
+    $("#metric-a").addEventListener("change", async () => {
+      state.metricA = $("#metric-a").value.trim();
+      try {
+        await api("/api/setting", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ frontend_metric_a: state.metricA }),
+        });
+      } catch (e) { showError(String(e)); }
+      computeRanks();
+      render();
+    });
+    $("#metric-b").addEventListener("change", async () => {
+      state.metricB = $("#metric-b").value.trim();
+      try {
+        await api("/api/setting", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ frontend_metric_b: state.metricB }),
+        });
+      } catch (e) { showError(String(e)); }
+      render();
+    });
+    $("#tab-btn-details").addEventListener("click", () => switchTab("details"));
+    $("#tab-btn-diff").addEventListener("click", () => switchTab("diff"));
+    bindCtxMenu();
+    bindCanvas();
+  }
+
+  // ----- Canvas pan + zoom --------------------------------------------------
+
+  const ZOOM_MIN = 0.3;
+  const ZOOM_MAX = 3.0;
+  const state2 = { panX: 0, panY: 0, zoom: 1 };
+
+  function applyTransform() {
+    const wrap = $("#zoom-wrap");
+    wrap.style.transform = `translate(${state2.panX}px, ${state2.panY}px) scale(${state2.zoom})`;
+    // Keep the infinite dot grid glued to the content: spacing scales with
+    // zoom, offset follows pan (modulo keeps it seamless while panning).
+    const gap = 22 * state2.zoom;
+    const canvas = $("#canvas-wrap");
+    canvas.style.backgroundSize = `${gap}px ${gap}px`;
+    canvas.style.backgroundPosition = `${state2.panX % gap}px ${state2.panY % gap}px`;
+  }
+
+  function bindCanvas() {
+    const canvas = $("#canvas-wrap");
+
+    // Pan: drag the empty canvas to move the SVG.
+    let panning = false;
+    let pid = null;
+    let startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+    canvas.addEventListener("pointerdown", (e) => {
+      if (e.target.closest(".g-node")) return;
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      panning = true;
+      pid = e.pointerId;
+      canvas.classList.add("dragging");
+      canvas.setPointerCapture(pid);
+      startX = e.clientX;
+      startY = e.clientY;
+      startPanX = state2.panX;
+      startPanY = state2.panY;
+      e.preventDefault();
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!panning) return;
+      state2.panX = startPanX + (e.clientX - startX);
+      state2.panY = startPanY + (e.clientY - startY);
+      applyTransform();
+    });
+    const endPan = (e) => {
+      if (!panning) return;
+      panning = false;
+      canvas.classList.remove("dragging");
+      try { canvas.releasePointerCapture(pid); } catch (_) {}
+      pid = null;
+    };
+    canvas.addEventListener("pointerup", endPan);
+    canvas.addEventListener("pointercancel", endPan);
+
+    // Zoom: wheel to scale toward the cursor. Compose with current pan
+    // so the point under the cursor stays under the cursor.
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      const oldZoom = state2.zoom;
+      const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, oldZoom * factor));
+      if (newZoom === oldZoom) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const wx = (mx - state2.panX) / oldZoom;
+      const wy = (my - state2.panY) / oldZoom;
+
+      state2.zoom = newZoom;
+      state2.panX = mx - wx * newZoom;
+      state2.panY = my - wy * newZoom;
+      applyTransform();
+    }, { passive: false });
+  }
+
+  // ----- Boot ---------------------------------------------------------------
+
+  async function boot() {
+    bindToolbar();
+    try {
+      state.meta = await api("/api/meta");
+      // Load metric preferences. Fall back: if only the legacy single-slot
+      // is set, populate slot A with it.
+      state.metricA = state.meta.frontend_metric_a || state.meta.frontend_metric || "";
+      state.metricB = state.meta.frontend_metric_b || "";
+      applyGraph(await api("/api/graph"));
+    } catch (e) {
+      showError(String(e));
+    }
+  }
+
+  function showError(msg) {
+    const el = $("#error-banner");
+    el.textContent = msg;
+    el.style.display = "block";
+  }
+
+  // ----- Utils --------------------------------------------------------------
+
+  function formatMetrics(m) {
+    if (!m) return "—";
+    const keys = Object.keys(m);
+    if (keys.length === 0) return "—";
+    return keys.map(k => `${k}=${m[k]}`).join("  ");
+  }
+  function formatDiff(text) {
+    return escapeHtml(text).split("\n").map(line => {
+      if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) {
+        return `<span class="h">${line}</span>`;
+      }
+      if (line.startsWith("+")) return `<span class="b">${line}</span>`;
+      if (line.startsWith("-")) return `<span class="a">${line}</span>`;
+      return line;
+    }).join("\n");
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function escapeAttr(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  }
+
+  boot();
+  </script>
+</body>
+</html>

@@ -19,16 +19,6 @@ class ExperimentExistsError(LineageError):
     """An experiment with this ID already exists."""
 
 
-class MaxChildrenError(LineageError):
-    """A parent already has the maximum 42 children."""
-
-    def __init__(self, parent: str):
-        super().__init__(
-            f"Cannot create experiment: parent {parent} already has 42 children"
-        )
-        self.parent = parent
-
-
 class HasChildrenError(LineageError):
     """Tried to remove an experiment that has children (use --recursive)."""
 

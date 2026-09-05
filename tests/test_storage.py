@@ -132,6 +132,17 @@ def test_find_latest_returns_none_when_empty(initialized: Path):
     assert storage.find_latest(initialized) is None
 
 
+def test_find_latest_tie_breaks_same_second_by_id(initialized: Path):
+    # Rapid successive adds share a timestamp; the highest id wins so the
+    # next experiment chains off it instead of fanning out from b0.
+    for cid in ("b0", "b1", "b2"):
+        storage.save(
+            storage.Meta(id=cid, parent="b0", type="snapshot", created_at="2021-01-01T00:00:00"),
+            initialized,
+        )
+    assert storage.find_latest(initialized) == "b2"
+
+
 def test_atomic_write_replaces_existing(tmp_path: Path):
     p = tmp_path / "x.txt"
     p.write_text("old", encoding="utf-8")
@@ -142,3 +153,26 @@ def test_atomic_write_replaces_existing(tmp_path: Path):
 def test_load_config_default_when_missing(tmp_path: Path):
     cfg = storage.load_config(tmp_path)
     assert cfg["auto_checkpoint_after"] == storage.DEFAULT_AUTO_CHECKPOINT_AFTER
+
+
+def test_rename_subtree_moves_descendants(initialized: Path):
+    storage.save(storage.Meta(id="b0", parent="b0", type="snapshot"), initialized)
+    storage.save(storage.Meta(id="b1", parent="b0", type="snapshot"), initialized)
+    storage.save(storage.Meta(id="b2", parent="b1", type="snapshot"), initialized)
+    storage.save(storage.Meta(id="b3", parent="b1", type="snapshot"), initialized)
+    mapping = storage.rename_subtree("b1", "b0a", "b0", initialized)
+    assert mapping == {"b1": "b0a", "b2": "b0aa", "b3": "b0ab"}
+    assert set(storage.list_ids(initialized)) == {"b0", "b0a", "b0aa", "b0ab"}
+    assert storage.load("b0a", initialized).parent == "b0"
+    assert storage.load("b0aa", initialized).parent == "b0a"
+    assert storage.load("b0ab", initialized).parent == "b0a"
+    # Children and notes travel with the rename.
+    assert set(storage.children_of("b0a", initialized)) == {"b0aa", "b0ab"}
+
+
+def test_rename_subtree_skips_taken_slots(initialized: Path):
+    storage.save(storage.Meta(id="b0", parent="b0", type="snapshot"), initialized)
+    storage.save(storage.Meta(id="b0a", parent="b0", type="snapshot"), initialized)
+    storage.save(storage.Meta(id="b1", parent="b0", type="snapshot"), initialized)
+    mapping = storage.rename_subtree("b1", "b0b", "b0", initialized)
+    assert mapping == {"b1": "b0b"}

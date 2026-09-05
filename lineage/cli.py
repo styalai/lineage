@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .commands import add, diff_cmd, log, note, remove, revert
+from .commands import add, diff_cmd, init, log, note, remove, revert, web
 from .commands._ui import run_command
 
 # Commands implemented in v0.1.
@@ -18,6 +18,8 @@ COMMANDS = {
     "remove": remove,
     "note": note,
     "log": log,
+    "web": web,
+    "init": init,
 }
 
 
@@ -26,14 +28,28 @@ def _register_add(subparsers) -> None:
     p = subparsers.add_parser(
         "add",
         help="create an experiment from the current workspace.",
-        description="Snapshot or diff the current workspace as a new experiment.",
+        description=(
+            "Snapshot the current workspace as a new floating baseline "
+            "(bN). Pass --from to attach under a parent instead "
+            "(path-encoded id like b0a, diff vs the parent)."
+        ),
     )
     p.add_argument("-m", "--message", default="", help="commit-style message for the experiment")
     p.add_argument(
         "--from",
         dest="from_",
         default=None,
-        help="parent experiment id (default: most recent)",
+        help="attach under this parent id instead of floating",
+    )
+    p.add_argument(
+        "--snapshot",
+        action="store_true",
+        help="store a full snapshot (new baseline) instead of a diff",
+    )
+    p.add_argument(
+        "--detached",
+        action="store_true",
+        help="create floating (this is the default; cannot combine with --from)",
     )
     p.set_defaults(_func=add.run)
 
