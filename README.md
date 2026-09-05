@@ -7,7 +7,7 @@ Track the lineage of your experiments as a **graph of snapshots and diffs**, wit
 
 ## Demo
 
-<video src="https://raw.githubusercontent.com/styalai/lineage/main/assets/demo.mp4" controls width="100%"></video>
+<video src="https://github.com/styalai/lineage/releases/download/v0.1.1/demo.mp4" controls width="100%"></video>
 
 Can't see the video above? [Watch `demo.mp4`](assets/demo.mp4) directly.
 
