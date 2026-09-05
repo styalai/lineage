@@ -2,8 +2,6 @@
 
 Track the lineage of your experiments as a **graph of snapshots and diffs**, without interfering with Git.
 
-> **Status:** v0.1 — commands: `add`, `diff`, `revert`, `remove`, `note`, `log`, `web`, `init`.
-
 ## Demo
 
 [![demo](assets/demo.gif)](https://github.com/styalai/lineage/releases/download/v0.1.1/demo.mp4)
