@@ -3,7 +3,6 @@
 Track the lineage of your experiments as a **graph of snapshots and diffs**, without interfering with Git.
 
 > **Status:** v0.1 — commands: `add`, `diff`, `revert`, `remove`, `note`, `log`, `web`, `init`.
-> Coming soon: `list`, `show`, `graph`, `gc`, `run`, shell autocompletion.
 
 ## Demo
 
